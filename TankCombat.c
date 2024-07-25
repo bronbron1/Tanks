@@ -66,6 +66,7 @@
 #define M0P                 0xD008         //Missile 0 to Player Collision Register
 
 #define HITCLR              0xD01E         //Collsion Clear Register: Poking a 1 clears ALL collision registers
+#define SEARCH_SIZE         10
 
 /*
     ----------------------------------------------- GLOBAL VARAIABLES -------------------------------------------------------
@@ -90,19 +91,28 @@ unsigned int tankPics[16][8] = {
         {36,38,158,255,255,114,112,32}      //WEST_60
 };
 
+// 
 struct pos {
     int x, y;  
 };
 
-// // can only generate up to 1000 moves total to get from src to dst i hope it will be enough
-struct pos queue[1000];
-struct pos set[1000];
+// can only generate up to 1000 moves total to get from src to dst i hope it will be enough
+
+
+// instead of trying to generate moves on every turn we should generate every 100 moves so that every once in a while this method goes off.
+// like gameplay slows down for a bit but then comes back up that should be a pretty easy feature to implement.
+// also when there is a firing angle on the coloumns or the rows we should fire just for vibes and then continue the journey forward.
+
+
+struct pos queue[SEARCH_SIZE];
+struct pos visited[SEARCH_SIZE];
+char backptr[SEARCH_SIZE];
 
 // W = wall cell
 // O = emtpy cell
 // S = player1
 // T = player2
-// unsigned char board[153][114];
+
 
 unsigned char j = 255;
 unsigned char m0SoundTracker = 0;
@@ -619,6 +629,28 @@ bool isWallPosistion(int x, int y) {
     return false;
 }
 
+bool isMovableCell(int x, int y) {
+    return isOnBoard(x, y) && !isWallPosistion(x, y);
+}
+
+// visited writer is the last posistion that we have to see.
+bool alreadyVisited(int x, int y, int visited_writer) {
+    int vr = 0;
+    while (vr < visited_writer) {
+        if (visited[vr].x == x && visited[vr].y == y) {
+            return true;
+        }
+        vr++;
+    }
+    return false;
+}
+
+
+bool hasFiringAngle(int ai_x, int ai_y, int p_x, int p_y) {
+    return true;
+}
+
+
 // logical approach
 unsigned char getAIPlayersNextMove2() {
     // Forward, backward, LEFT turn, RIGHT turn, FIRE
@@ -628,9 +660,11 @@ unsigned char getAIPlayersNextMove2() {
 
     int qr = 0;
     int qw = 0;
-    int sw = 0;
+    int visited_writer = 0;
 
     struct pos p;
+    struct pos curr;
+
     // this multiple reference frame thing is hella annoying. I don't think it really matters tho imo here is the solution
     // we keep track of a different location that is relative to p0. And that is the location that the AI uses as well...
 
@@ -638,17 +672,81 @@ unsigned char getAIPlayersNextMove2() {
     p.y = p1Relative2p0_y;
 
     queue[qw] = p;
-    set[sw] = p;
+    visited[visited_writer] = p;
+    // - is the symbol for the start implying it has no back pointer.
+    // i.e it is the start of the thing. 
+    backptr[visited_writer] = '-';
+
     qw++;
+    visited_writer++;
     // alright in theory I have all the pieces to run bfs on every move now. Idk how far 1000 moves will get me but let's find out.
-    while (qr < qw) {
-        int curr_x = queue[qr].x;
-        int curr_y = queue[qr].y;
+    while (qr < qw && qw < SEARCH_SIZE) {
+        curr.x = queue[qr].x;
+        curr.y = queue[qr].y;
+
+
+        if (hasFiringAngle(curr.x, curr.y, p0HorizontalLocation, p0VerticalLocation)) {
+            return 0x10;
+        }
+
+        // now there are 4 possible moves that I can do.
+        // x + 1
+        // x - 1 
+        // y + 1
+        // y - 1
+
+        // before doing each move we have to explore if that is a possible move that we can do.
+        if (isMovableCell(curr.x + 1, curr.y) && !alreadyVisited(curr.x + 1, curr.y, visited_writer)) {
+            // then we can visit it.
+            struct pos next;
+            next.x = curr.x + 1;
+            next.y = curr.y;
+            queue[qw] = next;
+            qw++;
+            visited[visited_writer] = next;
+            backptr[visited_writer] = 'L';
+            visited_writer++;
+        }
+
+        if (isMovableCell(curr.x - 1, curr.y) && !alreadyVisited(curr.x - 1, curr.y, visited_writer)) {
+            struct pos next;
+            next.x = curr.x - 1;
+            next.y = curr.y;
+            queue[qw] = next;
+            qw++;
+            visited[visited_writer] = next;
+            backptr[visited_writer] = 'R';
+            visited_writer++;
+        }
+
+        if (isMovableCell(curr.x, curr.y + 1) && !alreadyVisited(curr.x, curr.y + 1, visited_writer)) {
+            struct pos next;
+            next.x = curr.x;
+            next.y = curr.y + 1;
+            queue[qw] = next;
+            qw++;
+            visited[visited_writer] = next;
+            backptr[visited_writer] = 'U';
+            visited_writer++;
+        }
+
+        if (isMovableCell(curr.x, curr.y - 1) && !alreadyVisited(curr.x, curr.y - 1, visited_writer)) {
+            struct pos next;
+            next.x = curr.x;
+            next.y = curr.y - 1;
+            queue[qw] = next;
+            qw++;
+            visited[visited_writer] = next;
+            backptr[visited_writer] = 'D';
+            visited_writer++;
+        }
 
         qr++;
     }
 
 
+
+    // the logic should be after i get to the end of the 1000 I should just pick the last one and try. Literally fuck it we ball mentality.
 
 
     return 0;
