@@ -35,6 +35,7 @@
 #include <joystick.h>
 #include <time.h>
 #include <stdlib.h>
+#include <string.h>
 
 /*
     ----------------------------------------------- IDENTIFIERS -------------------------------------------------------
@@ -66,6 +67,7 @@
 #define M0P                 0xD008         //Missile 0 to Player Collision Register
 
 #define HITCLR              0xD01E         //Collsion Clear Register: Poking a 1 clears ALL collision registers
+
 #define SEARCH_SIZE         10
 
 /*
@@ -102,17 +104,27 @@ struct pos {
 // instead of trying to generate moves on every turn we should generate every 100 moves so that every once in a while this method goes off.
 // like gameplay slows down for a bit but then comes back up that should be a pretty easy feature to implement.
 // also when there is a firing angle on the coloumns or the rows we should fire just for vibes and then continue the journey forward.
-
-
 struct pos queue[SEARCH_SIZE];
+// let me try something:
+
+// how big is the board?
+//144x153
+
+// making a pretty big tradeoff here. Instead of considering the entire board. Because
+// of how the game is designed we are shortening the board view for the AI player do like 50 spots.
+// will just explore
+// unsigned char board[144][153];
+
 struct pos visited[SEARCH_SIZE];
 char backptr[SEARCH_SIZE];
+// want to fill the moves up with a list of moves every SEARCH_SIZE moves and have it read from it when getting AI moves
+// after we reach the limit then we can pivot.
+unsigned char path[SEARCH_SIZE];
 
 // W = wall cell
 // O = emtpy cell
 // S = player1
 // T = player2
-
 
 unsigned char j = 255;
 unsigned char m0SoundTracker = 0;
@@ -145,19 +157,13 @@ unsigned char p1LastMove;
 unsigned char p0history;
 unsigned char p1history;
 
-//Starting vertical and horizontal position of players
-const int verticalStartP0 = 131;
-const int horizontalStartP0 = 57;
-const int verticalStartP1 = 387;
-const int horizontalStartP1 = 190;
-
 //Variables to track vertical and horizontal locations of players
 int p0VerticalLocation = 131;
 int p0HorizontalLocation = 57;
 int p1VerticalLocation = 387;
 int p1HorizontalLocation = 190;
 
-// The AI needs these to maintain it's path
+// The AI needs these to maintain it's position to p0
 int p1Relative2p0_x = 190;
 int p1Relative2p0_y = 131;
 
@@ -552,7 +558,7 @@ void enablePMGraphics() {
 void setUpTankDisplay() {
     int counter = 0;
 
-    //Set up player 0 tank
+    // Set up player 0 tank
     POKE(horizontalRegister_P0, 57);
     POKE(colLumPM0, 202);
 
@@ -560,6 +566,7 @@ void setUpTankDisplay() {
         POKE(playerAddress+i, tankPics[EAST][counter]);
         counter++;
     }
+
     counter = 0;
     //Set up player 1 tank
     POKE(horizontalRegister_P1, 190);
@@ -572,16 +579,17 @@ void setUpTankDisplay() {
     counter = 0;
 }
 
-// random version
-unsigned char getAIPlayersNextMove() {
-    // UP, DOWN, LEFT, RIGHT, FIRE
-    unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
-    int r = rand() % 5;
-    return moves[r];
-}
+// // random version
+// unsigned char getAIPlayersNextMove() {
+//     // UP, DOWN, LEFT, RIGHT, FIRE
+//     unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
+//     int r = rand() % 5;
+//     return moves[r];
+// }
 
 /* The isOnBoard function determines if the current posistion is inside the boundaries of the board.
  */
+// 144x153
 bool isOnBoard(int x, int y) {
     return 52 <= x && x <= 196 && 55 <= y && y <= 208;
 }
@@ -645,16 +653,18 @@ bool alreadyVisited(int x, int y, int visited_writer) {
     return false;
 }
 
-
 bool hasFiringAngle(int ai_x, int ai_y, int p_x, int p_y) {
-    return true;
-}
+//     // we only care about firing angles in two respects:
+//     // 1. Horizontal axis
+//     // 2. Vertical axis
 
+    return false;
+}
 
 // logical approach
 unsigned char getAIPlayersNextMove2() {
     // Forward, backward, LEFT turn, RIGHT turn, FIRE
-    unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
+    // unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
     // One thing to note is that when the AI moves it only moves in 90 degree increments
     // so a left is a left turn forward is forward; backward is backward
 
@@ -671,6 +681,11 @@ unsigned char getAIPlayersNextMove2() {
     p.x = p1Relative2p0_x;
     p.y = p1Relative2p0_y;
 
+    // if I have a firing angle the only move I care about is firing hehe.
+    if (hasFiringAngle(p.x, p.y, p0HorizontalLocation, p0VerticalLocation)) {
+        return 0x10;
+    }
+
     queue[qw] = p;
     visited[visited_writer] = p;
     // - is the symbol for the start implying it has no back pointer.
@@ -684,17 +699,13 @@ unsigned char getAIPlayersNextMove2() {
         curr.x = queue[qr].x;
         curr.y = queue[qr].y;
 
-
-        if (hasFiringAngle(curr.x, curr.y, p0HorizontalLocation, p0VerticalLocation)) {
-            return 0x10;
-        }
-
         // now there are 4 possible moves that I can do.
         // x + 1
         // x - 1 
         // y + 1
         // y - 1
-
+        // this algorithm would work if the tank was a single pixel that is the problem that we are going to face because going around corners
+        // has to be that the cell + 8 can go around the corner. If that makes sense. I think at least. 
         // before doing each move we have to explore if that is a possible move that we can do.
         if (isMovableCell(curr.x + 1, curr.y) && !alreadyVisited(curr.x + 1, curr.y, visited_writer)) {
             // then we can visit it.
@@ -744,13 +755,48 @@ unsigned char getAIPlayersNextMove2() {
         qr++;
     }
 
+    // Through the BFS if we did not find a firing angle we should just pick the last position in the visited array and go from there
+    
+    // struct pos goal;
+    // goal.x = visited[visited_writer - 1].x;
+    // goal.y = visited[visited_writer - 1].y;
+    
+    // goal = visited[visited_writer - 1];
+    
+    // backptr[visited_writer - 1];
 
+    // yea no not having the map makes this so much more inefficient. Let me try to get the board in
+    // and then maybe this will be a lot easier. 
+    // the only problem is that the board is so big.
+    // we are so over the capacity 
 
     // the logic should be after i get to the end of the 1000 I should just pick the last one and try. Literally fuck it we ball mentality.
 
-
-    return 0;
+    // Yea let me think more about this in a second.
+    // This is just weird as far as I can tell.
+    return 0x04;
 }
+
+
+unsigned char getAIPlayersNextMove3(unsigned char player0Move) {
+    // unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
+    // Forward, backward, LEFT turn, RIGHT turn, FIRE
+    // just mirror what ever player 1 does
+    // left becomes right; right becomes left
+    if (hasFiringAngle(1, 1, 0, 0)) {
+        return 0x10;
+    }
+
+
+    if (player0Move == 0x04) {
+        return 0x08;
+    } else if (player0Move == 0x08) {
+        return 0x04;
+    }
+
+    return player0Move;
+}
+
 
 //------------------------------ movePlayers ------------------------------
 // Purpose: Do actions based on player's inputs such as moving and firing.
