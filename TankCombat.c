@@ -14,7 +14,7 @@
     NOTE:
         Code Key:
             Player 1 = P0
-            Player 2 = P1
+            Player 2 = P1 (AI)
     --------------------------------------------------------------------------------------------------------------------
 */
 
@@ -55,6 +55,19 @@
 #define WEST_NORTH          14
 #define WEST_60             15
 
+
+
+/*
+    // FORWARD, BACKWARD, LEFT TURN, RIGHT TURN, FIRE
+    // unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
+*/
+#define FORWARD 0x01
+#define BACKWARD 0x02
+#define LEFT_TURN 0x04
+#define RIGHT_TURN 0x08
+#define FIRE 0x10
+
+
 //collision detection definitions, add all registers
 #define P1PF                0xD005         //Player 1 to playfield Collision Register    
 #define P0PF                0xD004         //Player 0 to Playfield Collision Register
@@ -86,6 +99,27 @@ unsigned int tankPics[16][8] = {
         {56,30,223,62,56,248,124,24},       //WEST_15
         {152,92,62,255,251,112,56,24},      //NORTH_WEST
         {36,38,158,255,255,114,112,32}      //WEST_60
+};
+
+// row, col
+// y, x
+short deltas[16][2] = {
+    {-1, 0},            // NORTH
+    {-2, 1},            // NORTH_15
+    {-1, 1},            // NORTH_EAST
+    {-1, 2},            // NORTH_60
+    {0, 1},             // EAST
+    {1, 2},             // EAST_15
+    {1, 1},             // EAST_SOUTH
+    {2, 1},             // EAST_60
+    {1, 0},             // SOUTH
+    {2, -1},            // SOUTH_15
+    {1, -1},            // SOUTH_WEST
+    {1, -2},            // SOUTH_60
+    {0, -1},            // WEST
+    {-1, -2},           // WEST_15
+    {-1, -1},           // WEST_NORTH
+    {-2, -1}            // WEST_60
 };
 
 unsigned char j = 255;
@@ -145,6 +179,8 @@ int p0_r = 80;
 int p0_c = 9;
 int p1_r = 80;
 int p1_c = 142;
+int k = 0;
+
 
 /* p0VerticalLocation = p0_r
  * p0HorizontalLocation = p0_c
@@ -524,8 +560,124 @@ void setUpTankDisplay() {
     counter = 0;
 }
 
+// direction is one of NORTH...
+bool isOnLine(int direction) {
+    return deltas[direction][1] * (p1_r - p0_r) == deltas[direction][0] * (p1_c - p0_c);
+}
+
+unsigned char rotateOrFire(int direction) {
+    if (direction < 8) {
+        // it's opposite direction is at direction + 8
+        if (p1Direction != direction + 8) {
+            if (direction <= p1Direction && p1Direction < direction + 8) {
+                return RIGHT_TURN;
+            } else {
+                return LEFT_TURN;
+            }
+        }
+    } else {
+        // it's opposite is direction - 8
+        if (p1Direction != direction - 8) {
+            if (direction - 8 <= p1Direction && p1Direction < direction) {
+                return LEFT_TURN;
+            } else {
+                return RIGHT_TURN;
+            }
+        }
+    }
+    return FIRE;
+}
+
+unsigned char attack() {
+    // FORWARD, BACKWARD, LEFT TURN, RIGHT TURN, FIRE
+    // unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
+
+    // Goal 1: Let's map out the position of the AI tank in reference to p0 [DONE]
+    // Goal 2: Implement all the directions. There are 12 more but should go by pretty fast
+    // Goal 2.5: clean up the code lots of spegetti going on rn.
+    // Goal 3: Move the rotating to outside of each direction specific code. 
+    // Goal 4: add the moving to a different spot logic as well if you can't reach the player from here.
+
+    // Here are the design decisions that I have made:
+    // Using the normal coordinate system
+    // N-E-S-W
+    // I - includes N discludes E
+    // II - includes E disculdes S
+    // III - includes S disculdes W
+    // IV - includes W discludes N
+
+    // p0_r, p0_c, p1_r, p1_c
+    if (p0_r > p1_r && p0_c <= p1_c) {
+        // AI is in quadrant I of p0
+        // NORTH_EAST disculding EAST
+        // there are 4 directions in this case that I have to consider
+        // NORTH, NORTH_15, NORTH_EAST, NORTH_60 = [0, 3]
+        for (i = NORTH; i < NORTH_EAST; i++) {
+            if (isOnLine(i)) {
+                return rotateOrFire(i);
+            }
+        }
+        return 0x00; 
+    } else if (p0_r <= p1_r && p0_c < p1_c) {
+        // AI is in quadrant II of p0
+        // SOUTH_EAST discluding SOUTH
+        for (i = EAST; i < SOUTH; i++) {
+            if (isOnLine(i)) {
+                return rotateOrFire(i);
+            }
+        }
+        return 0x00;
+    } else if (p0_r < p1_r && p0_c >= p1_c) {
+        // AI is in quadrant III of p0
+        // SOUTH_WEST disculding WEST
+        for (i = SOUTH; i < WEST; i++) {
+            if (isOnLine(i)) {
+                return rotateOrFire(i);
+            }
+        }
+        return 0x00;
+    } else if (p0_r >= p1_r && p0_c > p1_c) {
+        // AI is in quadrant IV of p0
+        // NORTH_WEST disculding NORTH
+        for (i = WEST; i < WEST + 4; i++) {
+            if (isOnLine(i)) {
+                return rotateOrFire(i);
+            }
+        }
+        return 0x00;
+    }
+    return 0x00;
+}
+
+unsigned char hide() {
+
+    return 0x08;
+}
+
 unsigned char getAIPlayersNextMove() {
-    return 0x04;
+    // let's start with the basics let's just move the AI Player to always be at the same row as the 
+    // other player. 
+    // we can do that by calculating the difference between the two
+    // column positions
+    // p0_c and p1_c
+    // FORWARD, BACKWARD, LEFT TURN, RIGHT TURN, FIRE
+    // unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
+
+    
+    while (k < 50) {
+        k++;
+        return FORWARD;
+    }
+
+    if (p0Score <= p1Score) {
+        // we are ahead or tied try to make it hard for the opponent to score
+        // use variables like p0Direction to make it difficult for p0 to score on us
+        return attack();
+    } else {
+        // keep the game close and try to score.
+        // p1Direction will be helpful here to understand what way I have to point to try and score. 
+        return attack();
+    }
 }
 
 //------------------------------ movePlayers ------------------------------
@@ -1056,18 +1208,21 @@ void checkBorders() {
     if(p0HorizontalLocation <= 50 && p0IsHit){
         movedLeft0 = true;
         p0HorizontalLocation = 195;
+        // p0_c = 144;
         POKE(horizontalRegister_P0, p0HorizontalLocation);
     }
 
     if(p1HorizontalLocation <= 50 && p1IsHit){
         movedLeft1 = true;
         p1HorizontalLocation = 195;
+        // p1_c = 144;
         POKE(horizontalRegister_P1, p1HorizontalLocation);
     }
 
     //if they're too far to the right
     if(p0HorizontalLocation >= 195 && p0IsHit && !movedLeft0){
         p0HorizontalLocation = 50;
+
         POKE(horizontalRegister_P0, p0HorizontalLocation);
     }
 
@@ -1137,6 +1292,7 @@ void spinTank(int tank){
         if(p0HitDir == NORTH || p0HitDir == NORTH_EAST || p0HitDir == EAST_60 || p0HitDir == NORTH_15){
             //move left and spin
             p0HorizontalLocation++;
+            p0_c++;
             POKE(horizontalRegister_P0, p0HorizontalLocation);
             if(p0Direction == WEST_NORTH || p0Direction == WEST_60) p0Direction = NORTH;
             else p0Direction = p0Direction + 2;
@@ -1146,6 +1302,7 @@ void spinTank(int tank){
         if(p0HitDir == SOUTH || p0HitDir == SOUTH_15 || p0HitDir == SOUTH_WEST || p0HitDir == WEST_60){
             //move right and spin
             p0HorizontalLocation--;
+            p0_c--;
             POKE(horizontalRegister_P0, p0HorizontalLocation);
             if(p0Direction == NORTH_15 || p0Direction == NORTH) p0Direction = WEST_60;
             else p0Direction = p0Direction - 2;
@@ -1158,6 +1315,7 @@ void spinTank(int tank){
             else p0Direction = p0Direction - 2;
             POKE(playerAddress+p0VerticalLocation, 0);
             p0VerticalLocation++;
+            p0_r++;
             updateplayerDir(0);
         }
         if(p0HitDir == EAST || p0HitDir == EAST_15 || p0HitDir == EAST_SOUTH || p0HitDir == NORTH_60){
@@ -1166,6 +1324,7 @@ void spinTank(int tank){
             else p0Direction = p0Direction - 2;
             POKE(playerAddress+p0VerticalLocation+7, 0);
             p0VerticalLocation--;
+            p0_r--;
             updateplayerDir(0);
         }
         //lower the time that the tank is stuck in "hit" state
@@ -1179,6 +1338,7 @@ void spinTank(int tank){
         if(p1HitDir == NORTH || p1HitDir == NORTH_15 || p1HitDir == NORTH_EAST || p1HitDir == EAST_60){
             //move left and spin
             p1HorizontalLocation++;
+            p1_c++;
             POKE(horizontalRegister_P1, p1HorizontalLocation);
             if(p1Direction == WEST_NORTH || p1Direction == WEST_60) p1Direction = NORTH;
             else p1Direction = p1Direction + 2;
@@ -1188,6 +1348,7 @@ void spinTank(int tank){
         if(p1HitDir == SOUTH || p1HitDir == SOUTH_15 || p1HitDir == SOUTH_WEST || p1HitDir == WEST_60){
             //move right and spin
             p1HorizontalLocation--;
+            p1_c--;
             POKE(horizontalRegister_P1, p1HorizontalLocation);
             if(p1Direction == NORTH_15 || p1Direction == NORTH) p1Direction = WEST_60;
             else p1Direction = p1Direction - 2;
@@ -1198,6 +1359,7 @@ void spinTank(int tank){
             //move down and spin
             POKE(playerAddress+p1VerticalLocation, 0);
             p1VerticalLocation++;
+            p1_r++;
             if(p1Direction == NORTH_15 || p1Direction == NORTH) p1Direction = WEST_60;
             else p1Direction = p1Direction - 2;
             updateplayerDir(1);
@@ -1207,6 +1369,7 @@ void spinTank(int tank){
             //move up and spin
             POKE(playerAddress+p1VerticalLocation+7, 0);
             p1VerticalLocation--;
+            p1_r++;
             if(p1Direction == NORTH_15 || p1Direction == NORTH) p1Direction = WEST_60;
             else p1Direction = p1Direction - 2;
             updateplayerDir(1);
