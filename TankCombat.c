@@ -61,6 +61,7 @@
     // FORWARD, BACKWARD, LEFT TURN, RIGHT TURN, FIRE
     // unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
 */
+#define NOTHING 0x00
 #define FORWARD 0x01
 #define BACKWARD 0x02
 #define LEFT_TURN 0x04
@@ -127,6 +128,7 @@ unsigned char m0SoundTracker = 0;
 unsigned char m1SoundTracker = 0;
 int i;
 int frameDelayCounter = 0;
+int k = 0;
 
 //Adresses
 int bitMapAddress;
@@ -159,7 +161,6 @@ int p0HorizontalLocation = 57;
 int p1VerticalLocation = 387;
 int p1HorizontalLocation = 190;
 
-
 // variables to track the vertical and horizontal locations of the players in a new reference frame
 /* One thing that we found out while trying to run BFS is that there is no set position system for this game
  * and that is just one of the weird things that come with the Atari. We found out that in reference
@@ -179,8 +180,9 @@ int p0_r = 80;
 int p0_c = 9;
 int p1_r = 80;
 int p1_c = 142;
-int k = 0;
 
+bool directionChosen = false;
+int desiredDirection;
 
 /* p0VerticalLocation = p0_r
  * p0HorizontalLocation = p0_c
@@ -344,7 +346,8 @@ int main() {
             if (p1FireAvailable == false) { //start counter to limit p0 fire inputs
                 p1FireDelayCounter++;
             }
-            if (p1FireDelayCounter >= 60) {
+
+            if (p1FireDelayCounter >= 100) {
                 p1FireAvailable = true;
                 p1FireDelayCounter = 0;
             }
@@ -361,7 +364,6 @@ int main() {
             checkCollision();
             p1history = p1LastMove; //helps to fix collision bug
             p0history = p0LastMove; //helps to fix collision bug
-
 
             //This condition will only be met when either player 1 or player 2 reaches the score of 9,
             //or charcater 9 (which is 0x0019 in HEX located at Character Memory)
@@ -560,9 +562,29 @@ void setUpTankDisplay() {
     counter = 0;
 }
 
+
+// The pointPosition function will take in a direction which represents the direction of the line
+// and the point that it needs to evaluate if it's to the left or to the right of.
+// returns 0 when it's on the line, 1 when it's to the right, 2 when it's to the left.
+int pointPosition(int dir, int p_r, int p_c) {
+    int a = deltas[dir][0];
+    int b = -deltas[dir][1];
+    int c = deltas[dir][1] * p1_r - deltas[dir][0] * p1_c;
+
+    int res = a * p_c + b * p_r + c;
+
+    if (res > 0) {
+        return 1;
+    } else if (res < 0) {
+        return 2;
+    } else {
+        return 0;
+    }
+}
+
 // direction is one of NORTH...
 bool isOnLine(int direction) {
-    return deltas[direction][1] * (p1_r - p0_r) == deltas[direction][0] * (p1_c - p0_c);
+    return deltas[direction][1] * (p0_r - p1_r) == deltas[direction][0] * (p0_c - p1_c);
 }
 
 unsigned char rotateOrFire(int direction) {
@@ -570,33 +592,88 @@ unsigned char rotateOrFire(int direction) {
         // it's opposite direction is at direction + 8
         if (p1Direction != direction + 8) {
             if (direction <= p1Direction && p1Direction < direction + 8) {
-                return RIGHT_TURN;
-            } else {
                 return LEFT_TURN;
+            } else {
+                return RIGHT_TURN;
             }
         }
     } else {
         // it's opposite is direction - 8
         if (p1Direction != direction - 8) {
             if (direction - 8 <= p1Direction && p1Direction < direction) {
-                return LEFT_TURN;
-            } else {
                 return RIGHT_TURN;
+            } else {
+                return LEFT_TURN;
             }
         }
     }
     return FIRE;
 }
 
+bool linesEncapsultePoint(int dir1, int dir2) {
+    // inequality 1: DIR1(p1_c) < p1_r
+    int ex1 = 0;
+    int ex2 = 0;
+    int tmp = 0;
+    ex1 = deltas[dir1][0] * (p1_c - p0_c);
+    ex2 = deltas[dir1][1] * (p1_r - p0_r);
+    if (deltas[dir1][1] < 0) {
+        // swap the exp around when checking
+        tmp = ex1;
+        ex1 = ex2;
+        ex2 = tmp;
+    }
+
+    if (ex1 > ex2) {
+        return false;
+    }
+
+    // inequality 2: p1_r < DIR2(p1_c)
+    ex1 = deltas[dir2][1] * (p1_r - p0_r);
+    ex2 = deltas[dir2][0] * (p1_c - p0_c);
+    if (deltas[dir2][1] < 0) {
+        // swap the exps when checking
+        tmp = ex1;
+        ex1 = ex2;
+        ex2 = tmp;
+    }
+
+    if (ex1 > ex2) {
+        return false;
+    }
+
+    // inequality 3: DIR1(p1_r) < p1_c
+    ex1 = deltas[dir1][1] * (p1_r - p0_r);
+    ex2 = deltas[dir1][0] * (p1_c - p0_c);
+    if (deltas[dir1][0] < 0) {
+        tmp = ex1;
+        ex1 = ex2;
+        ex2 = tmp;
+    }
+
+    if (ex1 > ex2) {
+        return false;
+    }
+
+    // inequality 4: p1_c < DIR2(p1_r)
+    ex1 = deltas[dir2][0] * (p1_c - p0_c);
+    ex2 = deltas[dir2][1] * (p1_r - p0_r);
+    if (deltas[dir2][0] < 0) {
+        tmp = ex1;
+        ex1 = ex2;
+        ex2 = tmp;
+    }
+    
+    if (ex1 > ex2) {
+        return false;
+    }
+
+    return true;
+}
+
 unsigned char attack() {
     // FORWARD, BACKWARD, LEFT TURN, RIGHT TURN, FIRE
     // unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
-
-    // Goal 1: Let's map out the position of the AI tank in reference to p0 [DONE]
-    // Goal 2: Implement all the directions. There are 12 more but should go by pretty fast
-    // Goal 2.5: clean up the code lots of spegetti going on rn.
-    // Goal 3: Move the rotating to outside of each direction specific code. 
-    // Goal 4: add the moving to a different spot logic as well if you can't reach the player from here.
 
     // Here are the design decisions that I have made:
     // Using the normal coordinate system
@@ -605,52 +682,92 @@ unsigned char attack() {
     // II - includes E disculdes S
     // III - includes S disculdes W
     // IV - includes W discludes N
-
-    // p0_r, p0_c, p1_r, p1_c
-    if (p0_r > p1_r && p0_c <= p1_c) {
-        // AI is in quadrant I of p0
+    int a, b, c, d, e, mask;
+    int startDir;
+    int endDir;
+    int r;
+    if (p0_r < p1_r && p0_c >= p1_c) {
+        // p0 is in AI's quadrant I
         // NORTH_EAST disculding EAST
-        // there are 4 directions in this case that I have to consider
-        // NORTH, NORTH_15, NORTH_EAST, NORTH_60 = [0, 3]
-        for (i = NORTH; i < NORTH_EAST; i++) {
-            if (isOnLine(i)) {
-                return rotateOrFire(i);
-            }
-        }
-        return 0x00; 
-    } else if (p0_r <= p1_r && p0_c < p1_c) {
-        // AI is in quadrant II of p0
-        // SOUTH_EAST discluding SOUTH
-        for (i = EAST; i < SOUTH; i++) {
-            if (isOnLine(i)) {
-                return rotateOrFire(i);
-            }
-        }
-        return 0x00;
-    } else if (p0_r < p1_r && p0_c >= p1_c) {
-        // AI is in quadrant III of p0
-        // SOUTH_WEST disculding WEST
-        for (i = SOUTH; i < WEST; i++) {
-            if (isOnLine(i)) {
-                return rotateOrFire(i);
-            }
-        }
-        return 0x00;
+        startDir = NORTH;
+        endDir = NORTH_60;
     } else if (p0_r >= p1_r && p0_c > p1_c) {
-        // AI is in quadrant IV of p0
-        // NORTH_WEST disculding NORTH
-        for (i = WEST; i < WEST + 4; i++) {
-            if (isOnLine(i)) {
-                return rotateOrFire(i);
-            }
-        }
-        return 0x00;
+        // p0 is in AI's quadrant II
+        // SOUTH_EAST discluding SOUTH
+        startDir = EAST;
+        endDir = EAST_60;
+    } else if (p0_r > p1_r && p0_c <= p1_c) {
+        // p0 is in AI's quadrant III
+        // SOUTH_WEST discluding WEST
+       startDir = SOUTH;
+       endDir = SOUTH_60;
+    } else if (p0_r <= p1_r && p0_c < p1_c) {
+        // p0 is in AI's quardrant IV
+        // NORTH_WEST discluding NORTH
+        startDir = WEST;
+        endDir = WEST_60;
     }
-    return 0x00;
+
+    for (i = startDir; i < endDir; i++) {
+        a = pointPosition(i, p0_r - 2, p0_c - 4);
+        b = pointPosition(i, p0_r + 2, p0_c - 4);
+        c = pointPosition(i, p0_r - 2, p0_c + 3);
+        d = pointPosition(i, p0_r + 2, p0_c + 3);
+        e = pointPosition(i, p0_r, p0_c);
+
+        if (a == 0 || b == 0 || c == 0 || d == 0 || e == 0) {
+            p1Direction = i;
+            updateplayerDir(1);
+            directionChosen = false;
+            return FIRE;
+        }
+
+        mask = 0x00 | (1 << a) | (1 << b) | (1 << c) | (1 << d);
+        if (mask == 0x03) {
+            p1Direction = i;
+            updateplayerDir(1);
+            directionChosen = false;
+            return FIRE;
+        }
+    }
+
+    // TODO: move.
+
+    /* If there is nowhere to move to the AI tank should pick one of the directions at random and move until there is a spot to attack
+     */
+
+
+    // pick a number between 0-3
+    if (!directionChosen) {
+        // choose a random direction in the correct quadrant
+        r = rand() % 4;
+        p1Direction = startDir + r;
+        desiredDirection = p1Direction; 
+        updateplayerDir(1);
+        directionChosen = true;
+    } else {
+        p1Direction = desiredDirection;
+        updateplayerDir(1);
+        return FORWARD;
+    }
+    
+    // if it has no firing angle at the current moment then it should move to a spot where it has one.
+    // if (p1_r > p0_r) {
+    //     // while the rows are not equal go in the direction of the rows
+    //     // impling that p1_r > p0_r
+    //     p1Direction = NORTH;
+    //     updateplayerDir(1);
+    //     return FORWARD;
+    // } else {
+    //     p1Direction = NORTH;
+    //     updateplayerDir(1);
+    //     return BACKWARD;
+    // }
+
+    return NOTHING;
 }
 
 unsigned char hide() {
-
     return 0x08;
 }
 
@@ -663,11 +780,11 @@ unsigned char getAIPlayersNextMove() {
     // FORWARD, BACKWARD, LEFT TURN, RIGHT TURN, FIRE
     // unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
 
-    
-    while (k < 50) {
+    while (k < 72) {
         k++;
         return FORWARD;
     }
+
 
     if (p0Score <= p1Score) {
         // we are ahead or tied try to make it hard for the opponent to score
@@ -1369,7 +1486,7 @@ void spinTank(int tank){
             //move up and spin
             POKE(playerAddress+p1VerticalLocation+7, 0);
             p1VerticalLocation--;
-            p1_r++;
+            p1_r--;
             if(p1Direction == NORTH_15 || p1Direction == NORTH) p1Direction = WEST_60;
             else p1Direction = p1Direction - 2;
             updateplayerDir(1);
@@ -1712,3 +1829,82 @@ void traverseMissile(unsigned int missileDirection, int mHorizontalLocation, int
     }
 }
 
+// // computes the square of a num
+// unsigned int square(int num) {
+//     return num * num;
+// }
+
+// int absolute_value(int num) {
+//     int res;
+//     if (num < 0) {
+//         res = -num;
+//     } else {
+//         res = num;
+//     }
+//     return num;
+// }
+
+// int closestIntToSqrt() {
+//     return 0;
+// }
+
+// // direction is one of NORTH...WEST_60
+// // delta[DIR][0] = row
+// // delta[DIR][1] = col 
+// unsigned int distSquaredFromLine(int dir) {
+//     return square(deltas[dir][0] * p1_c - deltas[dir][1] * p1_r + deltas[dir][1] * p0_c - deltas[dir][0] * p0_r) / 
+//     (square(deltas[dir][0]) + square(deltas[dir][1]));
+// }
+
+    // // p0_r, p0_c, p1_r, p1_c
+    // if (p0_r > p1_r && p0_c <= p1_c) {
+    //     // AI is in quadrant I of p0
+    //     // NORTH_EAST disculding EAST
+    //     // there are 4 directions in this case that I have to consider
+    //     // NORTH, NORTH_15, NORTH_EAST, NORTH_60 = [0, 3]
+
+    //     for (i = NORTH; i < NORTH_EAST; i++) {
+    //         if (isOnLine(i)) {
+    //             p1Direction = i + 8;
+    //             updateplayerDir(1);
+    //             return FIRE;
+    //         }
+    //     }
+
+    //     return 0x00; 
+    // } else if (p0_r <= p1_r && p0_c < p1_c) {
+    //     // AI is in quadrant II of p0
+    //     // SOUTH_EAST discluding SOUTH
+    //     for (i = EAST; i < SOUTH; i++) {
+    //         if (isOnLine(i)) {
+    //             p1Direction = i + 8;
+    //             updateplayerDir(1);
+    //             return FIRE;
+    //         }
+    //     }
+    //     return 0x00;
+    // } else if (p0_r < p1_r && p0_c >= p1_c) {
+    //     // AI is in quadrant III of p0
+    //     // SOUTH_WEST disculding WEST
+    //     for (i = SOUTH; i < WEST; i++) {
+    //         if (isOnLine(i)) {
+    //             p1Direction = i - 8;
+    //             updateplayerDir(1);
+    //             return FIRE;
+    //             // return rotateOrFire(i);
+    //         }
+    //     }
+    //     return 0x00;
+    // } else if (p0_r >= p1_r && p0_c > p1_c) {
+    //     // AI is in quadrant IV of p0
+    //     // NORTH_WEST disculding NORTH
+    //     for (i = WEST; i <= WEST_60; i++) {
+    //         if (isOnLine(i)) {
+    //             p1Direction = i - 8;
+    //             updateplayerDir(1);
+    //             return FIRE;
+    //             // return rotateOrFire(i);
+    //         }
+    //     }
+    //     return 0x00;
+    // }
