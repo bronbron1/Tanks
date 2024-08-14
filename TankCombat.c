@@ -55,8 +55,6 @@
 #define WEST_NORTH          14
 #define WEST_60             15
 
-
-
 /*
     // FORWARD, BACKWARD, LEFT TURN, RIGHT TURN, FIRE
     // unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
@@ -184,6 +182,7 @@ int p1_c = 142;
 bool directionChosen = false;
 int desiredDirection;
 
+
 /* p0VerticalLocation = p0_r
  * p0HorizontalLocation = p0_c
  * p1VerticalLocation = p1_r
@@ -247,7 +246,7 @@ int p0Score = 16;
 int p1Score = 16;
 
 //variable to run the game, if it is false a user has won
-bool gameOn = true;
+bool gameOn = false;
 
 /*
     ----------------------------------------------- FUNCTION DECLARATIONS -------------------------------------------------------
@@ -273,20 +272,27 @@ void updateplayerDir(int player);
     ----------------------------------------------- MAIN DRIVER -------------------------------------------------------
 */
 int main() {
+    int p0Input;
+
     //Loading and installing joystick driver
     joy_load_driver(joy_stddrv);
-    joy_install(joy_static_stddrv);     
+    joy_install(joy_static_stddrv);   
 
+    
     //Set Up Display Screen
     _graphics(18);                      //Set default display to graphics 3 + 16 (+16 displays mode with graphics, eliminating the text window)
     rearrangingDisplayList();           //rearranging graphics 3 display list
-    initializeScore();
-    createBitMap();                     //Create bit map
-    enablePMGraphics();                 //Enable Player Missile Graphics
-    setUpTankDisplay();                 //Set up PLayer 1 and 2 Tank display
-
     //First while loop to prevent program carshing in native hardware
     while (true) {
+        p0Input = joy_read(JOY_1);
+        if (!gameOn && p0Input != 0x00) {
+            createBitMap();                     //Create bit map
+            enablePMGraphics();                 //Enable Player Missile Graphics
+            setUpTankDisplay();                 //Set up PLayer 1 and 2 Tank display
+            initializeScore();
+            gameOn = true;
+        }
+
         while (gameOn) {
             //Slows down character movement e.g. (60fps/5) = 12moves/second (it is actually slower than this for some reason)
             if (frameDelayCounter == 5)
@@ -367,14 +373,14 @@ int main() {
 
             //This condition will only be met when either player 1 or player 2 reaches the score of 9,
             //or charcater 9 (which is 0x0019 in HEX located at Character Memory)
-            if (p0Score == 25 || p1Score == 25) {
+            if (p0Score == 217 || p1Score == 25) {
                 int tracker = 0;
 
                 for (i = 0; i < 20; i++) {
                     POKE(charMapAddress + i, 0);
 
                     if (i >= 6 && i <= 13) {
-                        if (p0Score == 25) {
+                        if (p0Score == 217) {
                             POKE(charMapAddress + i, characterSetP0[tracker]);
                         } else if (p1Score == 25) {
                             POKE(charMapAddress + i, characterSetP1[tracker]);
@@ -462,7 +468,7 @@ void rearrangingDisplayList() {
 //                 score to 0.
 void initializeScore() {
     //Temp code
-    POKE(charMapAddress + 5, 16);
+    POKE(charMapAddress + 5, 208);
     POKE(charMapAddress + 14, 16);
 }
 
@@ -542,13 +548,63 @@ void setUpTankDisplay() {
     int counter = 0;
 
     //Set up player 0 tank
-    POKE(horizontalRegister_P0, 57);
-    POKE(colLumPM0, 202);
+    p0Direction = EAST;
+    p1Direction = WEST;
+    p0VerticalLocation = 131;
+    p0HorizontalLocation = 57;
+    p1VerticalLocation = 387;
+    p1HorizontalLocation = 190;
+
+    p0_r = 80;
+    p0_c = 9;
+    p1_r = 80;
+    p1_c = 142;
+
+    j = 255;
+    m0SoundTracker = 0;
+    m1SoundTracker = 0;
+    frameDelayCounter = 0;
+    k = 0;
+
+    directionChosen = false;
+
+    p0Score = 208;
+    p1Score = 16;
+
+    //variables to keep track of tank firing
+    p0Fired = false;
+    p1Fired = false;
+    m0exists = false;
+    m1exists = false;
+    p0FireDelayCounter = 0;
+    p1FireDelayCounter = 0;
+    p0FireAvailable = true;
+    p1FireAvailable = true;
+
+    //tank hit variables
+    p0IsHit = false;
+    p1IsHit = false;
+    p0HitDir = 0;
+    p1HitDir = 0;
+    hitTime[0] = 0;
+    hitTime[1] = 0;
+
+    //variables to delay tank diagonal movement
+    p0FirstDiag = false;
+    p1FirstDiag = false;
+
+    for (i = 0; i < 20; i++) {
+        POKE(charMapAddress + i, 0);
+    }
+
+    POKE(horizontalRegister_P0, p0HorizontalLocation);
+    POKE(colLumPM0, 70);
 
     for (i = 131; i < 131+8; i++) {
         POKE(playerAddress+i, tankPics[EAST][counter]);
         counter++;
     }
+
     counter = 0;
 
     //Set up player 1 tank
@@ -561,7 +617,6 @@ void setUpTankDisplay() {
     }
     counter = 0;
 }
-
 
 // The pointPosition function will take in a direction which represents the direction of the line
 // and the point that it needs to evaluate if it's to the left or to the right of.
@@ -608,67 +663,6 @@ unsigned char rotateOrFire(int direction) {
         }
     }
     return FIRE;
-}
-
-bool linesEncapsultePoint(int dir1, int dir2) {
-    // inequality 1: DIR1(p1_c) < p1_r
-    int ex1 = 0;
-    int ex2 = 0;
-    int tmp = 0;
-    ex1 = deltas[dir1][0] * (p1_c - p0_c);
-    ex2 = deltas[dir1][1] * (p1_r - p0_r);
-    if (deltas[dir1][1] < 0) {
-        // swap the exp around when checking
-        tmp = ex1;
-        ex1 = ex2;
-        ex2 = tmp;
-    }
-
-    if (ex1 > ex2) {
-        return false;
-    }
-
-    // inequality 2: p1_r < DIR2(p1_c)
-    ex1 = deltas[dir2][1] * (p1_r - p0_r);
-    ex2 = deltas[dir2][0] * (p1_c - p0_c);
-    if (deltas[dir2][1] < 0) {
-        // swap the exps when checking
-        tmp = ex1;
-        ex1 = ex2;
-        ex2 = tmp;
-    }
-
-    if (ex1 > ex2) {
-        return false;
-    }
-
-    // inequality 3: DIR1(p1_r) < p1_c
-    ex1 = deltas[dir1][1] * (p1_r - p0_r);
-    ex2 = deltas[dir1][0] * (p1_c - p0_c);
-    if (deltas[dir1][0] < 0) {
-        tmp = ex1;
-        ex1 = ex2;
-        ex2 = tmp;
-    }
-
-    if (ex1 > ex2) {
-        return false;
-    }
-
-    // inequality 4: p1_c < DIR2(p1_r)
-    ex1 = deltas[dir2][0] * (p1_c - p0_c);
-    ex2 = deltas[dir2][1] * (p1_r - p0_r);
-    if (deltas[dir2][0] < 0) {
-        tmp = ex1;
-        ex1 = ex2;
-        ex2 = tmp;
-    }
-    
-    if (ex1 > ex2) {
-        return false;
-    }
-
-    return true;
 }
 
 unsigned char attack() {
@@ -731,12 +725,6 @@ unsigned char attack() {
         }
     }
 
-    // TODO: move.
-
-    /* If there is nowhere to move to the AI tank should pick one of the directions at random and move until there is a spot to attack
-     */
-
-
     // pick a number between 0-3
     if (!directionChosen) {
         // choose a random direction in the correct quadrant
@@ -750,25 +738,8 @@ unsigned char attack() {
         updateplayerDir(1);
         return FORWARD;
     }
-    
-    // if it has no firing angle at the current moment then it should move to a spot where it has one.
-    // if (p1_r > p0_r) {
-    //     // while the rows are not equal go in the direction of the rows
-    //     // impling that p1_r > p0_r
-    //     p1Direction = NORTH;
-    //     updateplayerDir(1);
-    //     return FORWARD;
-    // } else {
-    //     p1Direction = NORTH;
-    //     updateplayerDir(1);
-    //     return BACKWARD;
-    // }
 
     return NOTHING;
-}
-
-unsigned char hide() {
-    return 0x08;
 }
 
 unsigned char getAIPlayersNextMove() {
@@ -785,16 +756,15 @@ unsigned char getAIPlayersNextMove() {
         return FORWARD;
     }
 
-
-    if (p0Score <= p1Score) {
-        // we are ahead or tied try to make it hard for the opponent to score
-        // use variables like p0Direction to make it difficult for p0 to score on us
-        return attack();
-    } else {
-        // keep the game close and try to score.
-        // p1Direction will be helpful here to understand what way I have to point to try and score. 
-        return attack();
-    }
+    // if (p1Score <= p0Score || p1Score >= 23) {
+    //     // if the AI is behind or the game is in closing time attack
+    //     return attack();
+    // } else {
+    //     // keep the game close and try to score.
+    //     // p1Direction will be helpful here to understand what way I have to point to try and score. 
+    //     return attack();
+    // }
+    return attack();
 }
 
 //------------------------------ movePlayers ------------------------------
@@ -805,7 +775,6 @@ unsigned char getAIPlayersNextMove() {
 void movePlayers(){
     //joystick code
     unsigned char player0move = joy_read(JOY_1);
-    // unsigned char player1move = joy_read(JOY_2);
     unsigned char player1move = getAIPlayersNextMove();
     p0LastMove = player0move;
     p1LastMove = player1move;
@@ -1325,6 +1294,7 @@ void checkBorders() {
     if(p0HorizontalLocation <= 50 && p0IsHit){
         movedLeft0 = true;
         p0HorizontalLocation = 195;
+        p0_c = 148;
         // p0_c = 144;
         POKE(horizontalRegister_P0, p0HorizontalLocation);
     }
@@ -1332,6 +1302,7 @@ void checkBorders() {
     if(p1HorizontalLocation <= 50 && p1IsHit){
         movedLeft1 = true;
         p1HorizontalLocation = 195;
+        p1_c = 148;
         // p1_c = 144;
         POKE(horizontalRegister_P1, p1HorizontalLocation);
     }
@@ -1339,12 +1310,13 @@ void checkBorders() {
     //if they're too far to the right
     if(p0HorizontalLocation >= 195 && p0IsHit && !movedLeft0){
         p0HorizontalLocation = 50;
-
+        p0_c = 0;
         POKE(horizontalRegister_P0, p0HorizontalLocation);
     }
 
     if(p1HorizontalLocation >= 195 && p1IsHit && !movedLeft1){
         p1HorizontalLocation = 50;
+        p1_c = 0;
         POKE(horizontalRegister_P1, p1HorizontalLocation);
     }
 
@@ -1358,6 +1330,8 @@ void checkBorders() {
         //add them to lower location
         p0VerticalLocation = 207;
         movedup0 = true;
+
+        p0_r = 156;
     }
     if(p1VerticalLocation <= 312 && p1IsHit){
         //delete player from upper location
@@ -1369,6 +1343,7 @@ void checkBorders() {
         //add them to lower location
         p1VerticalLocation = 464;
         movedup1 = true;
+        p1_r = 156;
     }
 
     //if they're too far down
@@ -1380,6 +1355,8 @@ void checkBorders() {
 
         //add them to upper location
         p0VerticalLocation = 57;
+
+        p0_r = 6;
     }
     if(p1VerticalLocation >= 464 && p1IsHit && !movedup1){
         //delete player at lower location
@@ -1389,6 +1366,8 @@ void checkBorders() {
 
         //add them to upper location
         p1VerticalLocation = 312;
+
+        p1_r = 6;
     }
 }
 
@@ -1494,6 +1473,7 @@ void spinTank(int tank){
         //lower the time that the tank is stuck in the "hit" state
         hitTime[1] = hitTime[1] - 1;
         if(hitTime[1] == 0) p1IsHit = false;
+        directionChosen = false;
     }
     //check to see if a tank hit a border wall
     checkBorders();
@@ -1828,83 +1808,3 @@ void traverseMissile(unsigned int missileDirection, int mHorizontalLocation, int
         }
     }
 }
-
-// // computes the square of a num
-// unsigned int square(int num) {
-//     return num * num;
-// }
-
-// int absolute_value(int num) {
-//     int res;
-//     if (num < 0) {
-//         res = -num;
-//     } else {
-//         res = num;
-//     }
-//     return num;
-// }
-
-// int closestIntToSqrt() {
-//     return 0;
-// }
-
-// // direction is one of NORTH...WEST_60
-// // delta[DIR][0] = row
-// // delta[DIR][1] = col 
-// unsigned int distSquaredFromLine(int dir) {
-//     return square(deltas[dir][0] * p1_c - deltas[dir][1] * p1_r + deltas[dir][1] * p0_c - deltas[dir][0] * p0_r) / 
-//     (square(deltas[dir][0]) + square(deltas[dir][1]));
-// }
-
-    // // p0_r, p0_c, p1_r, p1_c
-    // if (p0_r > p1_r && p0_c <= p1_c) {
-    //     // AI is in quadrant I of p0
-    //     // NORTH_EAST disculding EAST
-    //     // there are 4 directions in this case that I have to consider
-    //     // NORTH, NORTH_15, NORTH_EAST, NORTH_60 = [0, 3]
-
-    //     for (i = NORTH; i < NORTH_EAST; i++) {
-    //         if (isOnLine(i)) {
-    //             p1Direction = i + 8;
-    //             updateplayerDir(1);
-    //             return FIRE;
-    //         }
-    //     }
-
-    //     return 0x00; 
-    // } else if (p0_r <= p1_r && p0_c < p1_c) {
-    //     // AI is in quadrant II of p0
-    //     // SOUTH_EAST discluding SOUTH
-    //     for (i = EAST; i < SOUTH; i++) {
-    //         if (isOnLine(i)) {
-    //             p1Direction = i + 8;
-    //             updateplayerDir(1);
-    //             return FIRE;
-    //         }
-    //     }
-    //     return 0x00;
-    // } else if (p0_r < p1_r && p0_c >= p1_c) {
-    //     // AI is in quadrant III of p0
-    //     // SOUTH_WEST disculding WEST
-    //     for (i = SOUTH; i < WEST; i++) {
-    //         if (isOnLine(i)) {
-    //             p1Direction = i - 8;
-    //             updateplayerDir(1);
-    //             return FIRE;
-    //             // return rotateOrFire(i);
-    //         }
-    //     }
-    //     return 0x00;
-    // } else if (p0_r >= p1_r && p0_c > p1_c) {
-    //     // AI is in quadrant IV of p0
-    //     // NORTH_WEST disculding NORTH
-    //     for (i = WEST; i <= WEST_60; i++) {
-    //         if (isOnLine(i)) {
-    //             p1Direction = i - 8;
-    //             updateplayerDir(1);
-    //             return FIRE;
-    //             // return rotateOrFire(i);
-    //         }
-    //     }
-    //     return 0x00;
-    // }
