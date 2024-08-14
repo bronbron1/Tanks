@@ -637,34 +637,6 @@ int pointPosition(int dir, int p_r, int p_c) {
     }
 }
 
-// direction is one of NORTH...
-bool isOnLine(int direction) {
-    return deltas[direction][1] * (p0_r - p1_r) == deltas[direction][0] * (p0_c - p1_c);
-}
-
-unsigned char rotateOrFire(int direction) {
-    if (direction < 8) {
-        // it's opposite direction is at direction + 8
-        if (p1Direction != direction + 8) {
-            if (direction <= p1Direction && p1Direction < direction + 8) {
-                return LEFT_TURN;
-            } else {
-                return RIGHT_TURN;
-            }
-        }
-    } else {
-        // it's opposite is direction - 8
-        if (p1Direction != direction - 8) {
-            if (direction - 8 <= p1Direction && p1Direction < direction) {
-                return RIGHT_TURN;
-            } else {
-                return LEFT_TURN;
-            }
-        }
-    }
-    return FIRE;
-}
-
 unsigned char attack() {
     // FORWARD, BACKWARD, LEFT TURN, RIGHT TURN, FIRE
     // unsigned char moves[5] = {0x01, 0x02, 0x04, 0x08, 0x10};
@@ -756,14 +728,6 @@ unsigned char getAIPlayersNextMove() {
         return FORWARD;
     }
 
-    // if (p1Score <= p0Score || p1Score >= 23) {
-    //     // if the AI is behind or the game is in closing time attack
-    //     return attack();
-    // } else {
-    //     // keep the game close and try to score.
-    //     // p1Direction will be helpful here to understand what way I have to point to try and score. 
-    //     return attack();
-    // }
     return attack();
 }
 
